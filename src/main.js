@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { MAX_TP, MAX_HP, BASE_CASTLE_HITS, FIELDS, FIELD_BY_ID, HORDE_ROUTE, initialState, travel, canSleep, sleep, buy, dropOnDeath } from './rules.js';
+import { createArcher, createEnemy, createTree, createGroundTexture } from './visuals.js';
 import './style.css';
 
 const app = document.querySelector('#app');
@@ -257,12 +258,12 @@ class ExplorationWorld {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.7));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.45;
+    this.renderer.toneMappingExposure = 1.22;
     container.appendChild(this.renderer.domElement);
-    this.scene.add(new THREE.HemisphereLight(0xe6f0df, 0x53634e, 3));
-    const sunlight = new THREE.DirectionalLight(0xffe2ab, 3.5);
+    this.scene.add(new THREE.HemisphereLight(0xe6f0df, 0x53634e, 2.4));
+    const sunlight = new THREE.DirectionalLight(0xffe2ab, 2.8);
     sunlight.position.set(-18, 35, -20); this.scene.add(sunlight);
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(150, 120), new THREE.MeshStandardMaterial({ color: 0x617a54, roughness: 1 }));
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(150, 120), new THREE.MeshStandardMaterial({ map: createGroundTexture(), roughness: 1 }));
     ground.rotation.x = -Math.PI / 2; ground.position.y = -.08; this.scene.add(ground);
     this.ground = ground;
     this.makeWorld();
@@ -297,7 +298,8 @@ class ExplorationWorld {
   add(mesh, x, y, z, parent = this.scene) { mesh.position.set(x, y, z); parent.add(mesh); return mesh; }
   mat(color, roughness = 1) { return new THREE.MeshStandardMaterial({ color, roughness }); }
   makeWorld() {
-    const soil = this.mat(0xb59b6a), pale = this.mat(0xcabf8e), stone = this.mat(0x8d9690), roof = this.mat(0x5e5968), wood = this.mat(0x6d4e35), foliage = [this.mat(0x28533d), this.mat(0x3f6b4b), this.mat(0x527852)];
+    const soil = this.mat(0xb59b6a), pale = this.mat(0xcabf8e), stone = this.mat(0x8d9690), roof = this.mat(0x5e5968), wood = this.mat(0x6d4e35);
+    const flower = [this.mat(0xf5cd6d), this.mat(0xe6a8b0), this.mat(0xd3d8a1)];
     const seed = n => { const v = Math.sin(n * 57.23 + 13.7) * 43758.5453; return v - Math.floor(v); };
     // Each illustrated-map coordinate corresponds to the same coordinate in this playable world.
     for (const field of FIELDS) {
@@ -334,15 +336,24 @@ class ExplorationWorld {
       this.add(new THREE.Mesh(new THREE.ConeGeometry(1.23, 2.2, 8), roof), castle.x+dx, 7, castle.z+dz);
     }
     this.add(new THREE.Mesh(new THREE.ConeGeometry(3.5, 2.6, 8), roof), castle.x, 4.25, castle.z - 2);
+    for (const side of [-1, 1]) {
+      this.add(new THREE.Mesh(new THREE.BoxGeometry(.65, 2.2, .35), stone), castle.x + side * 1.55, 1.1, castle.z + 1.18);
+      this.add(new THREE.Mesh(new THREE.BoxGeometry(1.05, .45, .42), stone), castle.x + side * 1.55, 2.3, castle.z + 1.18);
+      this.add(new THREE.Mesh(new THREE.BoxGeometry(.65, 1.05, .12), wood), castle.x + side * .34, .54, castle.z + 1.42);
+    }
+    const castleFlag = this.add(new THREE.Mesh(new THREE.BoxGeometry(.08, 2.5, .08), stone), castle.x, 6.4, castle.z - 2);
+    this.add(new THREE.Mesh(new THREE.BoxGeometry(1.2, .62, .06), this.mat(0xbc7650)), castleFlag.position.x + .62, 7.2, castleFlag.position.z);
     const tower = worldPoint(FIELD_BY_ID.watchtower);
     this.add(new THREE.Mesh(new THREE.CylinderGeometry(1.45, 1.75, 9, 8), stone), tower.x, 4.5, tower.z-2);
     this.add(new THREE.Mesh(new THREE.ConeGeometry(2.15, 3.5, 8), this.mat(0x3f3a4d)), tower.x, 10.7, tower.z-2);
     const evil = new THREE.PointLight(0xd7666a, 7, 13); evil.position.set(tower.x, 8, tower.z-2); this.scene.add(evil);
     const forest = worldPoint(FIELD_BY_ID.forest), meadow = worldPoint(FIELD_BY_ID.meadow), marsh = worldPoint(FIELD_BY_ID.marsh), river = worldPoint(FIELD_BY_ID.river), quarry = worldPoint(FIELD_BY_ID.quarry);
     const treeAt = (x,z,size=1,dark=false) => {
-      const trunk = this.add(new THREE.Mesh(new THREE.CylinderGeometry(.2*size,.33*size,2.1*size,6), wood), x, 1.05*size, z);
-      const leaves = this.add(new THREE.Mesh(new THREE.ConeGeometry(1.22*size,3.2*size,7), dark ? foliage[0] : foliage[Math.floor(seed(x*3+z)*3)]), x, 3.2*size, z);
-      leaves.rotation.y = seed(z*7+x)*Math.PI; return trunk;
+      const variety = Math.floor(seed(x * 3 + z) * 3);
+      const kind = dark ? 'dark-pine' : variety === 0 ? 'broadleaf' : 'pine';
+      const tree = createTree(kind, size, variety);
+      tree.rotation.y = seed(z * 7 + x) * Math.PI * 2;
+      tree.position.set(x, 0, z); this.scene.add(tree);
     };
     for (let i=0;i<48;i++) {
       const angle = seed(i+11)*Math.PI*2, radius = 3.4 + seed(i+143)*8.7;
@@ -352,19 +363,47 @@ class ExplorationWorld {
       const a=seed(i+501)*Math.PI*2, r=4+seed(i+703)*9;
       treeAt(meadow.x+Math.cos(a)*r, meadow.z+Math.sin(a)*r, .5+seed(i+901)*.45);
     }
+    for (let i=0;i<54;i++) {
+      const a=seed(i+1001)*Math.PI*2, r=3.6+seed(i+1101)*9.2;
+      const x=meadow.x+Math.cos(a)*r, z=meadow.z+Math.sin(a)*r;
+      this.add(new THREE.Mesh(new THREE.CylinderGeometry(.025,.035,.48,4), this.mat(0x59794a)),x,.24,z);
+      this.add(new THREE.Mesh(new THREE.IcosahedronGeometry(.11,0),flower[i%3]),x,.51,z);
+    }
+    for (let i=0;i<10;i++) {
+      const a=seed(i+1201)*Math.PI*2, r=5+seed(i+1301)*6;
+      const x=forest.x+Math.cos(a)*r, z=forest.z+Math.sin(a)*r;
+      const stump=this.add(new THREE.Mesh(new THREE.CylinderGeometry(.27,.36,.46,7),wood),x,.23,z);
+      stump.rotation.y=a;
+      if (i%2===0) {
+        this.add(new THREE.Mesh(new THREE.ConeGeometry(.21,.29,7),this.mat(0xb67961)),x+.5,.34,z+.2);
+        this.add(new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,.22,5),pale),x+.5,.13,z+.2);
+      }
+    }
     for (let i=0;i<11;i++) {
       const x=marsh.x+(seed(i+601)-.5)*17, z=marsh.z+(seed(i+809)-.5)*14;
       const pool = new THREE.Mesh(new THREE.CircleGeometry(1.1+seed(i+43)*1.2,20), new THREE.MeshStandardMaterial({ color: 0x476e6d, metalness: .2, roughness: .25 }));
       pool.rotation.x=-Math.PI/2; pool.position.set(x,.035,z); this.scene.add(pool);
+    }
+    for (let i=0;i<26;i++) {
+      const x=marsh.x+(seed(i+1401)-.5)*18, z=marsh.z+(seed(i+1501)-.5)*15;
+      this.add(new THREE.Mesh(new THREE.CylinderGeometry(.035,.055,.9,4),this.mat(0x7b8052)),x,.45,z);
+      this.add(new THREE.Mesh(new THREE.CylinderGeometry(.07,.07,.28,5),this.mat(0x544536)),x,1,z);
     }
     for (let i=0;i<28;i++) {
       const x=quarry.x+(seed(i+83)-.5)*19, z=quarry.z+(seed(i+128)-.5)*17;
       const rock = this.add(new THREE.Mesh(new THREE.IcosahedronGeometry(.5+seed(i+218)*1.2,0), stone),x,.2,z);
       rock.rotation.set(seed(i+5),seed(i+4),seed(i+3));
     }
+    for (let i=0;i<6;i++) {
+      const x=quarry.x-5+i*1.5, z=quarry.z-3+(i%2)*1.2;
+      this.add(new THREE.Mesh(new THREE.BoxGeometry(1.2,.46,.75),pale),x,.23,z);
+    }
     for (let i=0;i<12;i++) {
       const water = new THREE.Mesh(new THREE.PlaneGeometry(1.9,2.9), new THREE.MeshStandardMaterial({ color: 0x5c9caa, metalness:.25, roughness:.35, transparent:true, opacity:.87 }));
       water.rotation.x=-Math.PI/2; water.rotation.z=.15; water.position.set(river.x-5+i*.88,.045,river.z-2+i*.25); this.scene.add(water);
+    }
+    for (let i=0;i<7;i++) {
+      this.add(new THREE.Mesh(new THREE.BoxGeometry(.55,.16,2.45),wood),river.x-1.4+i*.49,.2,river.z-1.2);
     }
     const leaf = this.add(new THREE.Mesh(new THREE.IcosahedronGeometry(.55,1), new THREE.MeshStandardMaterial({ color: 0xe6d675, emissive:0xcfa954, emissiveIntensity:1.3 })),river.x+1,1.2,river.z-1);
     const questLight = new THREE.PointLight(0xffe580,3.5,8); questLight.position.copy(leaf.position); this.scene.add(questLight);
@@ -381,16 +420,7 @@ class ExplorationWorld {
     const texture=new THREE.CanvasTexture(canvas); texture.colorSpace=THREE.SRGBColorSpace;
     const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,transparent:true,depthTest:false})); sprite.scale.set(8,1.5,1); return sprite;
   }
-  makeHero() {
-    const group=new THREE.Group(); const cloak=this.mat(0x285c46), leather=this.mat(0x8d603b), skin=this.mat(0xe7c7a1);
-    const body=new THREE.Mesh(new THREE.ConeGeometry(.58,1.5,8),cloak); body.position.y=.86; group.add(body);
-    const head=new THREE.Mesh(new THREE.SphereGeometry(.33,12,8),skin); head.position.y=1.75; group.add(head);
-    const hood=new THREE.Mesh(new THREE.ConeGeometry(.42,.55,8),cloak); hood.position.y=2.03; group.add(hood);
-    const bow=new THREE.Mesh(new THREE.TorusGeometry(.5,.045,6,18,Math.PI),leather); bow.position.set(.55,1.05,-.05); bow.rotation.y=Math.PI/2; group.add(bow);
-    const quiver=new THREE.Mesh(new THREE.CylinderGeometry(.14,.18,.7,6),leather); quiver.position.set(-.32,1.15,.2); quiver.rotation.z=.45; group.add(quiver);
-    const marker=new THREE.Mesh(new THREE.RingGeometry(.75,.91,32),new THREE.MeshBasicMaterial({color:0xe8d286,side:THREE.DoubleSide,transparent:true,opacity:.8})); marker.rotation.x=-Math.PI/2; marker.position.y=.05; group.add(marker);
-    return group;
-  }
+  makeHero() { return createArcher({ groundMarker: true }); }
   moveTo(target) {
     if (game.phase !== 'explore') return;
     const destination=fieldAt(target);
@@ -443,7 +473,7 @@ class ExplorationWorld {
       } else {
         const stride=Math.min(distance,dt*8.2); this.hero.position.addScaledVector(delta.normalize(),stride);
         this.hero.rotation.y=Math.atan2(delta.x,delta.z);
-        this.hero.children[0].rotation.z=Math.sin(performance.now()*.012)*.055;
+        this.hero.userData.walk.position.y=Math.sin(performance.now()*.012)*.055;
       }
       this.updateMarker();
     }
@@ -478,13 +508,9 @@ class CombatScene {
     const ring = new THREE.Mesh(new THREE.RingGeometry(12, 12.25, 64), new THREE.MeshBasicMaterial({ color: 0xc9ad76, side: THREE.DoubleSide, transparent: true, opacity: .65 }));
     ring.rotation.x = -Math.PI / 2; ring.position.y = .02; this.scene.add(ring);
     this.makeEnvironment(kind);
-    this.heroGroup = new THREE.Group();
-    const cloak = new THREE.Mesh(new THREE.ConeGeometry(.57, 1.5, 8), new THREE.MeshStandardMaterial({ color: 0x5d9576, roughness: .85 })); cloak.position.y = .88; this.heroGroup.add(cloak);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(.32, 12, 8), new THREE.MeshStandardMaterial({ color: 0xe0c29d })); head.position.y = 1.72; this.heroGroup.add(head);
-    const bow = new THREE.Mesh(new THREE.TorusGeometry(.53, .055, 8, 20, Math.PI), new THREE.MeshStandardMaterial({ color: 0x8e5934 })); bow.position.set(.45, 1.1, -.1); bow.rotation.y = Math.PI/2; this.heroGroup.add(bow);
+    this.heroGroup = createArcher();
     this.scene.add(this.heroGroup);
-    this.enemyGroup = new THREE.Group();
-    const enemyBody = new THREE.Mesh(new THREE.IcosahedronGeometry(kind === 'boss' ? 1.45 : 1.05, 1), new THREE.MeshStandardMaterial({ color: kind === 'boss' ? 0x945260 : 0x9d6150, roughness: .7 })); enemyBody.position.y = kind === 'boss' ? 1.65 : 1.15; this.enemyGroup.add(enemyBody);
+    this.enemyGroup = createEnemy(kind);
     const glow = new THREE.PointLight(0xff6c54, 2.4, 6); glow.position.y = 1.5; this.enemyGroup.add(glow);
     this.scene.add(this.enemyGroup);
     this.aimMarker = new THREE.Mesh(new THREE.RingGeometry(.22, .28, 24), new THREE.MeshBasicMaterial({ color: 0xffdf90, side: THREE.DoubleSide })); this.aimMarker.rotation.x = -Math.PI/2; this.aimMarker.position.y = .05; this.scene.add(this.aimMarker);
@@ -500,13 +526,9 @@ class CombatScene {
     this.frame();
   }
   makeEnvironment(kind) {
-    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3e332a });
-    const leafMat = new THREE.MeshStandardMaterial({ color: kind === 'boss' ? 0x4d525a : 0x385c46 });
     for (let i = 0; i < 28; i++) {
       const angle = i * Math.PI * 2 / 28, radius = 15 + (i % 3) * 1.3;
-      const tree = new THREE.Group();
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.17, .25, 2, 6), trunkMat); trunk.position.y = 1; tree.add(trunk);
-      const leaves = new THREE.Mesh(new THREE.ConeGeometry(1.1, 3.3, 7), leafMat); leaves.position.y = 3; tree.add(leaves);
+      const tree = createTree(kind === 'boss' ? 'dark-pine' : i % 5 === 0 ? 'broadleaf' : 'pine', .78 + (i % 4) * .09, i % 3);
       tree.position.set(Math.cos(angle)*radius, 0, Math.sin(angle)*radius); this.scene.add(tree);
     }
     for (let i = 0; i < 14; i++) {
@@ -549,12 +571,13 @@ class CombatScene {
     const aim = this.aimPoint(); this.heroGroup.rotation.y = Math.atan2(aim.x-this.hero.x, aim.z-this.hero.z);
     this.aimMarker.position.x = aim.x; this.aimMarker.position.z = aim.z;
     const chase = this.hero.clone().sub(this.enemy); chase.y = 0;
-    if (chase.length() > 2) this.enemy.addScaledVector(chase.normalize(), dt * (this.kind === 'boss' ? 2.6 : 1.8));
+    if (chase.length() > 2.5) this.enemy.addScaledVector(chase.normalize(), dt * (this.kind === 'boss' ? 2.6 : 1.8));
     else if (now > this.enemyAttackAt) {
       this.enemyAttackAt = now + (this.kind === 'boss' ? 1200 : 1800);
       if (now > this.invulnUntil) { game.hp = Math.max(0, game.hp - (this.kind === 'boss' ? 15 : 9)); $('#combatHp').textContent = game.hp; $('#combatHint').textContent = 'Treffer! Rolle im richtigen Moment aus der Reichweite.'; if (game.hp === 0) return this.finish('dead'); }
     }
-    this.enemyGroup.position.copy(this.enemy); this.enemyGroup.rotation.y += dt*.4;
+    this.enemyGroup.position.copy(this.enemy);
+    this.enemyGroup.rotation.y = Math.atan2(this.hero.x-this.enemy.x, this.hero.z-this.enemy.z);
     for (const projectile of [...this.projectiles]) {
       projectile.mesh.position.addScaledVector(projectile.direction, dt*24);
       if (projectile.mesh.position.distanceTo(this.enemy.clone().setY(1.15)) < (this.kind === 'boss' ? 1.5 : 1.05)) {
