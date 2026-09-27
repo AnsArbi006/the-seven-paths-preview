@@ -15,7 +15,7 @@ npm run dev
 
 Im Browser die angezeigte lokale Adresse öffnen. Desktop mit Tastatur und Maus empfohlen.
 
-- Erkundung: in die begehbare 3D-Welt klicken; der Bogenschütze läuft zum angeklickten Ort und die Kamera folgt. Die Minimap oben rechts zeigt seine Position live und erlaubt Routenwahl. Die goldenen Tore auf den Wegen markieren Feldübergänge. Erst beim Überqueren eines Tores kostet der Wechsel einen Reisepunkt; innerhalb eines Felds ist Bewegung frei.
+- Erkundung: WASD oder Pfeiltasten bewegen den Bogenschützen relativ zur Kamera. Ziehen mit gedrückter Maustaste dreht die Kamera um den Helden, das Mausrad zoomt; ein einfacher Klick in die Welt bewegt nichts. Die Minimap oben rechts zeigt seine Position live und plant per Klick weiterhin eine Route. Die goldenen Tore auf den Wegen markieren Feldübergänge. Erst beim Überqueren eines Tores kostet der Wechsel einen Reisepunkt; innerhalb eines Felds und auf den Wegen ist Bewegung frei. Die Steuerungswerte stehen gesammelt in `CONTROLS` am Anfang von `src/main.js`.
 - Oberfläche: Das Spiel füllt das Browserfenster. Held, Tag, Reisepunkte, Leben und Pfeile stehen links als HUD; Karte und aufklappbare Quest-/Burganzeige rechts. „Vollbild“ schaltet zusätzlich den Browser-Vollbildmodus um. Auf schmalen Bildschirmen sind Ortsaktionen über „Ort & Aktionen“ erreichbar.
 - Schlafen: nur in gegnerfreien Feldern. Die Horde zieht nachts einen Schritt, Reisepunkte werden auf sieben gesetzt.
 - Kampf: WASD, Maus, Linksklick, Leertaste. Der Schuss unmittelbar nach einer Rolle streut.

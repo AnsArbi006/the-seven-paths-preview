@@ -8,11 +8,24 @@ let game = initialState();
 let combat = null;
 let world = null;
 const fieldIcons = { castle: '♜', meadow: '✦', crossroads: '✣', forest: '♠', marsh: '◈', quarry: '◆', river: '≈', watchtower: '♜' };
+// Steuerung in der Erkundung. Alle Zahlen stehen hier, damit sich das Spielgefühl an einer Stelle abstimmen lässt.
+const CONTROLS = {
+  walkSpeed: 8.2,                  // Laufgeschwindigkeit in Welteinheiten pro Sekunde
+  fieldRadius: 10.3,               // begehbarer Kreis um jede Feldmitte (deckt sich mit dem hellen Ring am Boden); darf 10,38 nicht überschreiten, sonst reicht der Kreis über das knappste Tor (Wegkreuz–Nebelwald, 10,387 von der Mitte)
+  roadHalfWidth: 2.6,              // halbe Breite der begehbaren Straße zwischen zwei Nachbarfeldern; deckt sich mit den Torpfosten bei ±2,6 (BoxGeometry(5.3, …) in makeWorld)
+  gateAt: .53,                     // Anteil der Straße, ab dem das Nachbarfeld betreten wird: kurz hinter dem goldenen Tor (Straßenmitte), damit ein Schritt zurück nicht sofort wieder einen Reisepunkt kostet (Rückweg erst 6 % der Straßenlänge weiter)
+  routeEntryRadius: 9.7,           // Abstand zur Feldmitte, in dem eine Minimap-Route zwischen Straßenachse und Feldkreis wechselt (unter fieldRadius)
+  mouseSensitivity: .0045,         // Kameradrehung in Bogenmaß pro gezogenem Pixel
+  minPitch: .18, maxPitch: 1.25,   // Neigung der Kamera über dem Boden (Bogenmaß)
+  minDistance: 8, maxDistance: 38, // Kameraabstand zum Helden
+  zoomStep: .0012                  // Zoomfaktor je Mausrad-Einheit
+};
+const KEY_MAP = { KeyW: 'forward', ArrowUp: 'forward', KeyS: 'back', ArrowDown: 'back', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right' };
 
 app.innerHTML = `
   <main class="game-shell">
     <div class="world-card">
-      <div id="worldViewport" aria-label="Begehbare 3D-Welt; klicke auf den Boden, um den Bogenschützen zu bewegen"></div>
+      <div id="worldViewport" aria-label="Begehbare 3D-Welt; WASD bewegt den Bogenschützen, Ziehen mit der Maus dreht die Kamera"></div>
       <div class="hud-brand"><span class="brand-mark">✦</span><div><strong>THE SEVEN PATHS</strong><small>KAPITEL I · SPIELBARE VORSCHAU</small></div></div>
       <div class="world-topline"><span><span class="live-dot"></span> <span id="phaseLabel">ERKUNDUNG</span></span><button id="fullscreenBtn" class="text-button" aria-label="Vollbild umschalten">⛶ &nbsp; Vollbild</button><button id="guideBtn" class="text-button">? &nbsp; Hilfe</button></div>
       <aside class="hud-left" aria-label="Held und Status">
@@ -28,7 +41,7 @@ app.innerHTML = `
         <details class="hud-drawer threat-card"><summary><span class="drawer-icon danger">♜</span><span><small>BURG & HORDE</small><strong id="threatLabel">Horde am Wachturm</strong></span><span class="drawer-chevron">⌄</span></summary><div class="drawer-content"><div class="meter"><div id="castleMeter"></div></div><div class="threat-row"><span id="castleText"></span><span id="goldText"></span></div><p class="small" id="routeText"></p></div></details>
       </aside>
       <div class="destination-label" id="destinationLabel">KÖNIGSBURG</div>
-      <div class="world-prompt" id="worldPrompt">KLICKE AUF DEN BODEN, UM ZU LAUFEN · WÄHLE EIN ZIEL AUF DER KARTE</div>
+      <div class="world-prompt" id="worldPrompt">WASD LAUFEN · MAUS ZIEHEN DREHT DIE KAMERA · MAUSRAD ZOOMT · KARTE PLANT ROUTEN</div>
     </div>
   </main>
   <div id="toast" role="status" aria-live="polite"></div>
@@ -179,7 +192,7 @@ $('#sleepBtn').addEventListener('click', () => {
 
 $('#guideBtn').addEventListener('click', () => {
   $('#overlay').classList.remove('hidden');
-  $('#overlay').innerHTML = `<div class="modal guide"><button class="close" id="closeOverlay" aria-label="Schließen">×</button><div class="eyebrow">SO SPIELST DU</div><h2>Erkunden. Planen. Kämpfen.</h2><div class="guide-grid"><div><strong>01 · Laufen</strong><p>Klicke auf den Boden der 3D-Welt. Dein Held läuft zum Ziel; die Kamera folgt. Ein Klick auf die Minimap plant ebenfalls eine Route. Erst beim Überqueren einer Feldgrenze kostet es einen von sieben Reisepunkten.</p></div><div><strong>02 · Rasten</strong><p>Nur gegnerfreie Felder erlauben Schlaf. Der Tag endet; ungenutzte Punkte verfallen. Die Horde zieht nachts entlang der roten Route zur Burg.</p></div><div><strong>03 · Kämpfen</strong><p>Im Kampf: WASD bewegen, Maus zielen, Linksklick schießen, Leertaste rollen. Der Schuss unmittelbar nach einer Rolle streut. Pfeile sind begrenzt.</p></div><div><strong>04 · Gewinnen</strong><p>Finde das Silberblatt am Flussufer und besiege den Wächter am Wachturm. Die Burg fällt nach drei Treffern, plus einem weiteren pro gekauftem Schild.</p></div></div><p class="modal-note">Dieser Web-Prototyp ist eine Einzelspieler-Vorschau. Steam-Lobbys, Einladungen, Handel und echte Mehrspieler-Kämpfe folgen im Unity-Spiel.</p><button class="primary-btn" id="closeGuide">Verstanden</button></div>`;
+  $('#overlay').innerHTML = `<div class="modal guide"><button class="close" id="closeOverlay" aria-label="Schließen">×</button><div class="eyebrow">SO SPIELST DU</div><h2>Erkunden. Planen. Kämpfen.</h2><div class="guide-grid"><div><strong>01 · Laufen</strong><p>Bewege den Helden mit WASD oder den Pfeiltasten. Halte eine Maustaste gedrückt und ziehe, um die Kamera zu drehen; das Mausrad zoomt. Ein Klick auf die Minimap plant eine Route. Erst beim Überqueren eines Tores kostet es einen von sieben Reisepunkten.</p></div><div><strong>02 · Rasten</strong><p>Nur gegnerfreie Felder erlauben Schlaf. Der Tag endet; ungenutzte Punkte verfallen. Die Horde zieht nachts entlang der roten Route zur Burg.</p></div><div><strong>03 · Kämpfen</strong><p>Im Kampf: WASD bewegen, Maus zielen, Linksklick schießen, Leertaste rollen. Der Schuss unmittelbar nach einer Rolle streut. Pfeile sind begrenzt.</p></div><div><strong>04 · Gewinnen</strong><p>Finde das Silberblatt am Flussufer und besiege den Wächter am Wachturm. Die Burg fällt nach drei Treffern, plus einem weiteren pro gekauftem Schild.</p></div></div><p class="modal-note">Dieser Web-Prototyp ist eine Einzelspieler-Vorschau. Steam-Lobbys, Einladungen, Handel und echte Mehrspieler-Kämpfe folgen im Unity-Spiel.</p><button class="primary-btn" id="closeGuide">Verstanden</button></div>`;
   $('#closeOverlay').onclick = closeOverlay; $('#closeGuide').onclick = closeOverlay;
 });
 $('#fullscreenBtn').addEventListener('click', async () => {
@@ -274,25 +287,52 @@ class ExplorationWorld {
     this.targetRing.rotation.x = -Math.PI / 2; this.targetRing.position.y = .06; this.targetRing.visible = false; this.scene.add(this.targetRing);
     this.route = [];
     this.clock = new THREE.Clock();
-    this.raycaster = new THREE.Raycaster();
-    this.pointer = new THREE.Vector2();
-    this.onClick = event => {
-      if (game.phase !== 'explore' || !$('#overlay').classList.contains('hidden')) return;
-      const rect = this.renderer.domElement.getBoundingClientRect();
-      this.pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
-      this.raycaster.setFromCamera(this.pointer, this.camera);
-      const hit = this.raycaster.intersectObject(this.ground)[0];
-      if (hit) this.moveTo(hit.point);
+    // Kamera kreist um den Helden: Ziehen mit der Maus dreht, das Mausrad zoomt, WASD läuft relativ zur Blickrichtung.
+    this.keys = new Set();
+    this.drag = null;
+    this.cameraYaw = 0; this.cameraPitch = Math.atan2(12.5, 17); this.cameraDistance = Math.hypot(12.5, 17);
+    this.cameraAnchor = this.hero.position.clone();
+    this.blockedAt = 0;
+    const canvas = this.renderer.domElement;
+    this.onPointerDown = event => {
+      if (event.button !== 0 && event.button !== 2) return;
+      this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY };
+      canvas.setPointerCapture(event.pointerId); canvas.classList.add('dragging');
     };
+    this.onPointerMove = event => {
+      if (!this.drag || event.pointerId !== this.drag.id) return;
+      const dx = event.clientX - this.drag.x, dy = event.clientY - this.drag.y;
+      this.drag.x = event.clientX; this.drag.y = event.clientY;
+      this.cameraYaw -= dx * CONTROLS.mouseSensitivity;
+      this.cameraPitch = THREE.MathUtils.clamp(this.cameraPitch + dy * CONTROLS.mouseSensitivity, CONTROLS.minPitch, CONTROLS.maxPitch);
+    };
+    this.onPointerUp = event => { if (this.drag && event.pointerId === this.drag.id) { this.drag = null; canvas.classList.remove('dragging'); } };
+    this.onWheel = event => { event.preventDefault(); this.cameraDistance = THREE.MathUtils.clamp(this.cameraDistance * Math.exp(event.deltaY * CONTROLS.zoomStep), CONTROLS.minDistance, CONTROLS.maxDistance); };
+    this.onContextMenu = event => event.preventDefault();
+    this.onKeyDown = event => {
+      const key = KEY_MAP[event.code];
+      if (!key || game.phase !== 'explore' || !$('#overlay').classList.contains('hidden')) return;
+      event.preventDefault(); this.keys.add(key);
+    };
+    this.onKeyUp = event => { const key = KEY_MAP[event.code]; if (key) this.keys.delete(key); };
+    this.onBlur = () => { this.keys.clear(); this.drag = null; canvas.classList.remove('dragging'); };
     this.onResize = () => {
       const w = container.clientWidth, h = container.clientHeight;
       this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); this.renderer.setSize(w, h);
     };
-    this.renderer.domElement.addEventListener('pointerdown', this.onClick);
+    canvas.addEventListener('pointerdown', this.onPointerDown);
+    canvas.addEventListener('pointermove', this.onPointerMove);
+    canvas.addEventListener('pointerup', this.onPointerUp);
+    canvas.addEventListener('pointercancel', this.onPointerUp);
+    canvas.addEventListener('wheel', this.onWheel, { passive: false });
+    canvas.addEventListener('contextmenu', this.onContextMenu);
+    window.addEventListener('keydown', this.onKeyDown);
+    window.addEventListener('keyup', this.onKeyUp);
+    window.addEventListener('blur', this.onBlur);
     window.addEventListener('resize', this.onResize);
     this.onResize();
-    this.camera.position.copy(this.hero.position).add(new THREE.Vector3(0, 12.5, 17));
-    this.camera.lookAt(this.hero.position.x, 0, this.hero.position.z - 4);
+    this.camera.position.copy(this.hero.position).add(this.cameraOffset());
+    this.camera.lookAt(this.hero.position.x, 1.2, this.hero.position.z - 3);
     this.frame();
   }
   add(mesh, x, y, z, parent = this.scene) { mesh.position.set(x, y, z); parent.add(mesh); return mesh; }
@@ -429,11 +469,27 @@ class ExplorationWorld {
     if (!path) return toast('Dorthin gibt es noch keinen Weg.');
     if (path.length-1>game.tp) return toast(`Für ${destination.name} brauchst du ${path.length-1} Reisepunkte. Du hast ${game.tp}.`);
     this.route=[];
+    // Die Route bleibt auf der begehbaren Fläche: Sie folgt der Straßenachse und wechselt nur im Feldkreis (Radius routeEntryRadius) auf die nächste Straße.
+    const onAxis=(center,toward,distance)=>center.clone().addScaledVector(toward.clone().sub(center).normalize(),distance);
+    // Steht der Held außerhalb des Feldkreises auf einer Straße, führt die Route zuerst auf deren Achse zurück in den Kreis (entfällt, wenn es schon die Straße der ersten Etappe ist).
+    const home=worldPoint(FIELD_BY_ID[game.field]), local=this.hero.position.clone().sub(home);
+    let start=this.hero.position;
+    if (local.length()>CONTROLS.routeEntryRadius) for (const id of FIELD_BY_ID[game.field].neighbors) {
+      const road=worldPoint(FIELD_BY_ID[id]).sub(home), along=local.dot(road)/road.lengthSq();
+      if (along<0 || along>1 || local.clone().addScaledVector(road,-along).length()>CONTROLS.roadHalfWidth) continue;
+      if (id!==path[1]) { start=onAxis(home,worldPoint(FIELD_BY_ID[id]),CONTROLS.routeEntryRadius); this.route.push({point:start}); }
+      break;
+    }
     for (let i=1;i<path.length;i++) {
-      const from=worldPoint(FIELD_BY_ID[path[i-1]]), to=worldPoint(FIELD_BY_ID[path[i]]);
+      const from=worldPoint(FIELD_BY_ID[path[i-1]]), to=worldPoint(FIELD_BY_ID[path[i]]), road=to.clone().sub(from);
+      // Erste Etappe: Fußpunkt des Startpunkts auf der Straßenachse, zwischen Feldmitte und Tor geklammert. Danach: Austrittspunkt auf der nächsten Straße.
+      const along=i===1 ? Math.max(0,Math.min(.51,start.clone().sub(from).dot(road)/road.lengthSq())) : CONTROLS.routeEntryRadius/road.length();
+      this.route.push({point:from.clone().addScaledVector(road,along)});
       // The glowing gate halfway along each road is the real field boundary.
       const crossing=from.clone().lerp(to,.51);
       this.route.push({point:crossing,enter:path[i],from:path[i-1]});
+      // Eintrittspunkt: auf derselben Achse im Abstand routeEntryRadius zur Mitte des betretenen Felds.
+      this.route.push({point:onAxis(to,from,CONTROLS.routeEntryRadius)});
     }
     const final=target.clone(); final.y=0;
     const center=worldPoint(destination);
@@ -448,6 +504,7 @@ class ExplorationWorld {
     this.route=[]; this.targetRing.visible=false;
     this.hero.position.copy(worldPoint(FIELD_BY_ID[id]));
     if (id === 'castle') this.hero.position.z += 6;
+    this.cameraAnchor.copy(this.hero.position);
     $('#destinationLabel').textContent=FIELD_BY_ID[id].name.toUpperCase();
     this.updateMarker();
   }
@@ -456,10 +513,95 @@ class ExplorationWorld {
     const marker=$('#playerMarker');
     if (marker) marker.setAttribute('transform',`translate(${(this.hero.position.x/1.32+50)*10},${(this.hero.position.z/1.12+50)*6.67})`);
   }
+  forwardVector() { return new THREE.Vector3(-Math.sin(this.cameraYaw), 0, -Math.cos(this.cameraYaw)); }
+  cameraOffset() {
+    const flat = Math.cos(this.cameraPitch) * this.cameraDistance;
+    return new THREE.Vector3(Math.sin(this.cameraYaw) * flat, Math.sin(this.cameraPitch) * this.cameraDistance, Math.cos(this.cameraYaw) * flat);
+  }
+  inputDirection() {
+    const x = (this.keys.has('right') ? 1 : 0) - (this.keys.has('left') ? 1 : 0);
+    const z = (this.keys.has('back') ? 1 : 0) - (this.keys.has('forward') ? 1 : 0);
+    if (!x && !z) return null;
+    const forward = this.forwardVector(), right = new THREE.Vector3(-forward.z, 0, forward.x);
+    return forward.multiplyScalar(-z).addScaledVector(right, x).normalize();
+  }
+  // Wo darf der Held stehen? Im Kreis um sein Feld und auf den Straßen zu den Nachbarn.
+  // Kurz hinter dem Tor (ab gateAt der Straße) beginnt das Nachbarfeld; das Betreten kostet wie bisher einen Reisepunkt.
+  passageAt(position) {
+    const current = FIELD_BY_ID[game.field], center = worldPoint(current), local = position.clone().sub(center);
+    for (const id of current.neighbors) {
+      const road = worldPoint(FIELD_BY_ID[id]).sub(center);
+      const along = local.dot(road) / road.lengthSq();
+      if (along < 0 || along > 1) continue;
+      if (local.clone().addScaledVector(road, -along).length() > CONTROLS.roadHalfWidth) continue;
+      return along > CONTROLS.gateAt ? { enter: id, from: current.id } : { free: true };
+    }
+    return local.length() <= CONTROLS.fieldRadius ? { free: true } : null;
+  }
+  tryStep(step) {
+    if (step.lengthSq() < 1e-8) return false;
+    const next = this.hero.position.clone().add(step);
+    const passage = this.passageAt(next);
+    if (!passage) {
+      // Sicherheitsnetz: Steht der Held schon außerhalb der begehbaren Fläche, darf er jeden Schritt zur Mitte seines Felds hin machen.
+      const center = worldPoint(FIELD_BY_ID[game.field]);
+      if (this.passageAt(this.hero.position) || next.distanceToSquared(center) >= this.hero.position.distanceToSquared(center)) return false;
+      this.hero.position.copy(next);
+      return true;
+    }
+    if (passage.enter) {
+      const result = travel(game, passage.enter);
+      if (!result.ok) { this.blockedHint(result.reason); return false; }
+      this.hero.position.copy(next);
+      $('#destinationLabel').textContent = FIELD_BY_ID[passage.enter].name.toUpperCase();
+      enteredField(passage.enter, passage.from);
+      return true;
+    }
+    this.hero.position.copy(next);
+    return true;
+  }
+  walk(direction, stride) {
+    const step = direction.clone().multiplyScalar(stride);
+    this.hero.rotation.y = Math.atan2(direction.x, direction.z);
+    let moved = this.tryStep(step);
+    if (!moved) {
+      // Blockiert die Grenze den vollen Schritt, gleitet der Held an ihr entlang: erst längs der nächsten Straße, dann längs des Feldkreises, zuletzt achsparallel.
+      const center = worldPoint(FIELD_BY_ID[game.field]), local = this.hero.position.clone().sub(center);
+      let axis = new THREE.Vector3(), nearest = Infinity;
+      for (const id of FIELD_BY_ID[game.field].neighbors) {
+        const road = worldPoint(FIELD_BY_ID[id]).sub(center), along = Math.max(0, Math.min(1, local.dot(road) / road.lengthSq()));
+        const gap = local.clone().addScaledVector(road, -along).length();
+        if (gap < nearest) { nearest = gap; axis = road.normalize(); }
+      }
+      const tangent = new THREE.Vector3(-local.z, 0, local.x).normalize();
+      const slides = [axis, tangent].map(dir => dir.multiplyScalar(step.dot(dir)));
+      // Der Kreisschritt bleibt auf dem aktuellen Radius (Bogen statt Sehne), sonst wandert der Held je Gleitschritt minimal nach außen und klebt am Rand fest.
+      if (slides[1].lengthSq()) slides[1].add(local).setLength(local.length()).sub(local);
+      moved = slides.some(c => c.length() > 1e-4 && c.dot(step) > 0 && this.tryStep(c)) || this.tryStep(new THREE.Vector3(step.x, 0, 0)) || this.tryStep(new THREE.Vector3(0, 0, step.z));
+    }
+    if (moved) {
+      this.hero.userData.walk.position.y = Math.sin(performance.now() * .012) * .055;
+      $('#worldPrompt').classList.add('dismissed');
+      this.updateMarker();
+    }
+    return moved;
+  }
+  blockedHint(reason) {
+    const now = performance.now();
+    if (now - this.blockedAt < 2500) return;
+    this.blockedAt = now; toast(reason);
+  }
   frame = () => {
     this.raf=requestAnimationFrame(this.frame);
     const dt=Math.min(.05,this.clock.getDelta());
-    if (game.phase==='explore' && this.route.length && $('#overlay').classList.contains('hidden')) {
+    const active=game.phase==='explore' && $('#overlay').classList.contains('hidden');
+    if (!active) this.keys.clear();
+    const input=active ? this.inputDirection() : null;
+    if (input) {
+      // Tasteneingabe hat Vorrang: eine auf der Karte geplante Route wird verworfen.
+      if (this.route.length) { this.route=[]; this.targetRing.visible=false; $('#destinationLabel').textContent=FIELD_BY_ID[game.field].name.toUpperCase(); }
+      this.walk(input, dt*CONTROLS.walkSpeed);
+    } else if (active && this.route.length) {
       const step=this.route[0], delta=step.point.clone().sub(this.hero.position); delta.y=0;
       const distance=delta.length();
       if (distance<.15) {
@@ -477,12 +619,23 @@ class ExplorationWorld {
       }
       this.updateMarker();
     }
-    const desired=this.hero.position.clone().add(new THREE.Vector3(0,12.5,17));
-    this.camera.position.lerp(desired,Math.min(1,dt*4));
-    this.camera.lookAt(this.hero.position.x,0,this.hero.position.z-4);
+    // Der Ankerpunkt folgt dem Helden weich; Drehung und Zoom wirken sofort.
+    this.cameraAnchor.lerp(this.hero.position,Math.min(1,dt*6));
+    const forward=this.forwardVector();
+    this.camera.position.copy(this.cameraAnchor).add(this.cameraOffset());
+    this.camera.lookAt(this.cameraAnchor.x+forward.x*3,1.2,this.cameraAnchor.z+forward.z*3);
     this.renderer.render(this.scene,this.camera);
   };
-  dispose() { cancelAnimationFrame(this.raf); this.renderer.domElement.removeEventListener('pointerdown',this.onClick); window.removeEventListener('resize',this.onResize); this.renderer.dispose(); this.container.replaceChildren(); }
+  dispose() {
+    cancelAnimationFrame(this.raf);
+    const canvas=this.renderer.domElement;
+    canvas.removeEventListener('pointerdown',this.onPointerDown); canvas.removeEventListener('pointermove',this.onPointerMove);
+    canvas.removeEventListener('pointerup',this.onPointerUp); canvas.removeEventListener('pointercancel',this.onPointerUp);
+    canvas.removeEventListener('wheel',this.onWheel); canvas.removeEventListener('contextmenu',this.onContextMenu);
+    window.removeEventListener('keydown',this.onKeyDown); window.removeEventListener('keyup',this.onKeyUp);
+    window.removeEventListener('blur',this.onBlur); window.removeEventListener('resize',this.onResize);
+    this.renderer.dispose(); this.container.replaceChildren();
+  }
 }
 
 class CombatScene {
