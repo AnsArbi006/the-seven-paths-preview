@@ -6,10 +6,15 @@
     <meta name="theme-color" content="#0b1716" />
     <meta name="description" content="The Seven Paths – spielbarer Einzelspieler-Mockup einer Koop-Fantasywelt." />
     <title>The Seven Paths · Spielbarer Prototyp</title>
-    <script type="module" crossorigin src="./assets/index-DFZMPB_v.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-CBt6vgdn.css">
+    <script type="module" crossorigin src="./assets/index-lcRWJ6x6.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BgsqupVs.css">
   </head>
   <body>
     <div id="app"></div>
+    <script>
+      if (location.protocol === 'file:') {
+        document.getElementById('app').innerHTML = '<main style="max-width:640px;margin:12vh auto;padding:30px;color:#f2e8c9;background:#132922;border-radius:16px;font:16px/1.6 sans-serif"><h1>Diese Datei ist nicht die spielbare Webseite.</h1><p>Der 3D-Prototyp braucht einen Webserver. Öffne die veröffentlichte Version über diesen Link:</p><p><a style="color:#f3d18c" href="https://ansarbi006.github.io/the-seven-paths-preview/">The Seven Paths – spielbare Webseite öffnen</a></p></main>';
+      }
+    </script>
   </body>
 </html>

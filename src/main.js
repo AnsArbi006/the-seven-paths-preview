@@ -5,6 +5,7 @@ import './style.css';
 const app = document.querySelector('#app');
 let game = initialState();
 let combat = null;
+let world = null;
 const fieldIcons = { castle: '♜', meadow: '✦', crossroads: '✣', forest: '♠', marsh: '◈', quarry: '◆', river: '≈', watchtower: '♜' };
 
 app.innerHTML = `
@@ -13,12 +14,14 @@ app.innerHTML = `
     <div class="top-actions"><span class="pill subtle">Einzelspieler-Vorschau</span><button id="guideBtn" class="text-button">Spielanleitung ↗</button></div>
   </header>
   <main>
-    <section class="intro"><div class="eyebrow">KÖNIGREICH ELDERVALE · PROTOTYP 0.1</div><h1>Sieben Wege.<br><em>Ein Königreich.</em></h1><p>Bewege dich über die Felder, halte die Horde von der Burg fern und finde das Silberblatt. Ein erster spielbarer Blick auf die Regeln von <i>The Seven Paths</i>.</p></section>
+    <section class="intro"><div class="eyebrow">KÖNIGREICH ELDERVALE · BEGEHBARE VORSCHAU</div><h1>Sieben Wege.<br><em>Eine Welt.</em></h1><p>Klicke in die 3D-Welt: Dein Bogenschütze läuft selbst zum Ziel. Die kleine Karte zeigt deinen Standort und die Feldgrenzen. Beim Übergang in ein anderes Feld verbrauchst du einen Reisepunkt.</p></section>
     <section class="game-shell">
-      <div class="map-card">
-        <div class="map-topline"><span><span class="live-dot"></span> WELTKARTE</span><span id="phaseLabel">ERKUNDUNG</span></div>
-        <div class="map-frame" id="mapFrame"><img src="./assets/seven-paths-map.png" alt="Illustrierte Fantasywelt mit Burg, Wald, Fluss, Sumpf und Wachturm"/><svg id="mapSvg" viewBox="0 0 1000 667" preserveAspectRatio="xMidYMid meet" aria-label="Interaktive Karte"></svg><div class="map-vignette"></div></div>
-        <div class="map-footer"><span><span class="legend-dot player"></span> Bogenschütze</span><span><span class="legend-dot enemy"></span> Horde / Gegner</span><span><span class="legend-dot quest"></span> Questziel</span><span class="map-hint">Feld anklicken = reisen · Im aktuellen Feld klicken = frei bewegen</span></div>
+      <div class="world-card">
+        <div id="worldViewport" aria-label="Begehbare 3D-Welt; klicke auf den Boden, um den Bogenschützen zu bewegen"></div>
+        <div class="world-topline"><span><span class="live-dot"></span> BEGEHBARE WELT</span><span id="phaseLabel">ERKUNDUNG</span></div>
+        <div class="world-prompt">↖ KLICKE AUF EINEN ORT IN DER WELT · DEIN HELD GEHT DORTHIN</div>
+        <div class="destination-label" id="destinationLabel">KÖNIGSBURG</div>
+        <div class="minimap" aria-label="Minimap der Welt"><div class="minimap-title">WELTKARTE <span id="miniLocation">Königsburg</span></div><div class="mini-frame"><img src="./assets/seven-paths-map.png" alt="Kleine Übersicht der Welt"/><svg id="mapSvg" viewBox="0 0 1000 667" preserveAspectRatio="none" aria-label="Feldübersicht"></svg></div><div class="mini-legend"><span>● Du</span><span>● Gegner</span><span>● Quest</span></div></div>
       </div>
       <aside class="sidebar">
         <div class="hero-card"><div class="hero-portrait">🏹</div><div><div class="eyebrow">DEIN HELD</div><h2>Der Bogenschütze</h2><p>Schnell. Wendiger Fernkampf. Eine Rolle rettet dich, macht den nächsten Schuss aber unpräzise.</p></div></div>
@@ -29,7 +32,7 @@ app.innerHTML = `
         <button id="sleepBtn" class="primary-btn">✦ &nbsp; Tag beenden</button><p class="small footnote" id="sleepHint">Schlafen ist nur in gegnerfreien Feldern möglich.</p>
       </aside>
     </section>
-    <section class="below"><div><div class="eyebrow">DEIN ZIEL</div><h2>Die Welt bewegt sich, auch wenn du ruhst.</h2></div><p>Jede Nacht rückt die Horde ein Feld Richtung Burg vor. Planung schlägt Tempo: Sieben Reisepunkte pro Tag, keine angesparten Punkte. Ein Schild aus dem Burgshop fängt einen zusätzlichen Angriff ab.</p></section>
+    <section class="below"><div><div class="eyebrow">DEIN ZIEL</div><h2>Die Welt bewegt sich, auch wenn du ruhst.</h2></div><p>Jede Nacht rückt die Horde ein Feld Richtung Burg vor. Sieben Reisepunkte pro Tag, keine angesparten Punkte. Ein Schild aus dem Burgshop fängt einen zusätzlichen Angriff ab. Dieser Web-Prototyp zeigt das Bewegungsgefühl; der spätere Steam-Koop entsteht in Unity.</p></section>
   </main>
   <div id="toast" role="status" aria-live="polite"></div>
   <div id="overlay" class="overlay hidden" role="dialog" aria-modal="true"></div>
@@ -38,6 +41,19 @@ app.innerHTML = `
 const $ = selector => document.querySelector(selector);
 const esc = str => String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const point = field => ({ x: field.x * 10, y: field.y * 6.67 });
+const worldPoint = field => new THREE.Vector3((field.x - 50) * 1.32, 0, (field.y - 50) * 1.12);
+const fieldAt = position => FIELDS.reduce((best, field) => position.distanceToSquared(worldPoint(field)) < position.distanceToSquared(worldPoint(best)) ? field : best, FIELDS[0]);
+function shortestPath(start, goal) {
+  const queue = [[start]];
+  const seen = new Set([start]);
+  while (queue.length) {
+    const path = queue.shift();
+    const last = path.at(-1);
+    if (last === goal) return path;
+    for (const next of FIELD_BY_ID[last].neighbors) if (!seen.has(next)) { seen.add(next); queue.push([...path, next]); }
+  }
+  return null;
+}
 function toast(message) { const el = $('#toast'); el.textContent = message; el.classList.add('show'); clearTimeout(toast.timer); toast.timer = setTimeout(() => el.classList.remove('show'), 3700); }
 
 function renderMap() {
@@ -54,39 +70,40 @@ function renderMap() {
     const reachable = FIELD_BY_ID[game.field].neighbors.includes(f.id) && game.tp > 0;
     const enemy = (f.id === 'forest' && game.forestEnemyAlive) || (f.id === currentHorde && game.hordeIndex > 0) || (f.id === 'watchtower' && game.bossAlive);
     const quest = f.id === game.questItemField && game.questItemOnGround;
-    return `<g class="field ${active ? 'active' : ''} ${reachable ? 'reachable' : ''}" data-field="${f.id}" tabindex="0" role="button" aria-label="${esc(f.name)}${reachable ? ', erreichbar' : ''}"><circle class="field-ring" cx="${p.x}" cy="${p.y}" r="${active ? 30 : 27}"/><circle class="field-core" cx="${p.x}" cy="${p.y}" r="20"/><text class="field-icon" x="${p.x}" y="${p.y + 6}">${fieldIcons[f.id]}</text><text class="field-name" x="${p.x}" y="${p.y + 47}">${esc(f.name)}</text>${enemy ? `<circle class="enemy-indicator" cx="${p.x + 21}" cy="${p.y - 21}" r="8"/>` : ''}${quest ? `<circle class="quest-indicator" cx="${p.x - 21}" cy="${p.y - 21}" r="8"/>` : ''}</g>`;
+    return `<g class="field ${active ? 'active' : ''} ${reachable ? 'reachable' : ''}" data-field="${f.id}" tabindex="0" role="button" aria-label="Route nach ${esc(f.name)}"><circle class="field-ring" cx="${p.x}" cy="${p.y}" r="${active ? 24 : 20}"/><circle class="field-core" cx="${p.x}" cy="${p.y}" r="13"/><text class="field-icon" x="${p.x}" y="${p.y + 5}">${fieldIcons[f.id]}</text>${enemy ? `<circle class="enemy-indicator" cx="${p.x + 15}" cy="${p.y - 15}" r="7"/>` : ''}${quest ? `<circle class="quest-indicator" cx="${p.x - 15}" cy="${p.y - 15}" r="7"/>` : ''}</g>`;
   }).join('');
-  $('#mapSvg').innerHTML = `<polyline class="horde-route" points="${routeLine}"/>${edges.join('')}${nodes}<g class="player-marker" transform="translate(${game.marker.x * 10},${game.marker.y * 6.67})"><circle r="11"/><path d="M0,-16 L8,2 L0,-3 L-8,2 Z"/></g>`;
+  const marker = world ? { x: world.hero.position.x / 1.32 + 50, y: world.hero.position.z / 1.12 + 50 } : game.marker;
+  $('#mapSvg').innerHTML = `<polyline class="horde-route" points="${routeLine}"/>${edges.join('')}${nodes}<g id="playerMarker" class="player-marker" transform="translate(${marker.x * 10},${marker.y * 6.67})"><circle r="12"/><path d="M0,-17 L8,2 L0,-3 L-8,2 Z"/></g>`;
+  $('#miniLocation').textContent = FIELD_BY_ID[game.field].name;
   $('#mapSvg').querySelectorAll('.field').forEach(node => {
-    node.addEventListener('click', event => { event.stopPropagation(); chooseField(node.dataset.field); });
     node.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); chooseField(node.dataset.field); } });
   });
 }
 
 function chooseField(id) {
   if (game.phase !== 'explore') return;
-  if (id === game.field) { toast('Klicke auf die Karte nahe deinem Feld, um dich darin frei zu bewegen.'); return; }
-  const origin = game.field;
-  const result = travel(game, id);
-  if (!result.ok) { toast(result.reason); return; }
-  if (id === 'forest' && game.forestEnemyAlive) { startCombat('scout', origin); return; }
-  if (id === HORDE_ROUTE[game.hordeIndex] && game.hordeIndex > 0) { startCombat('horde', origin); return; }
-  if (id === 'watchtower' && game.bossAlive && game.questItem) { startCombat('boss', origin); return; }
-  if (id === 'watchtower' && !game.questItem) toast('Der Wachturm bleibt verschlossen, bis du das Silberblatt besitzt.');
-  else toast(`Du erreichst ${FIELD_BY_ID[id].name}. Ein Reisepunkt verbraucht.`);
-  render();
+  world?.moveTo(worldPoint(FIELD_BY_ID[id]));
 }
 
-$('#mapSvg').addEventListener('click', event => {
-  if (game.phase !== 'explore') return;
+$('#mapSvg').addEventListener('pointerdown', event => {
+  event.stopPropagation();
+  const node = event.target.closest?.('[data-field]');
+  if (node) { chooseField(node.dataset.field); return; }
   const rect = event.currentTarget.getBoundingClientRect();
   const x = (event.clientX - rect.left) / rect.width * 100;
   const y = (event.clientY - rect.top) / rect.height * 100;
-  const center = FIELD_BY_ID[game.field];
-  if (Math.hypot((x - center.x) * 1.5, y - center.y) > 13) { toast('Bleibe für freie Bewegung im aktuellen Feld. Für Reisen klicke einen benachbarten Feldmarker.'); return; }
-  game.marker = { x, y };
-  renderMap();
+  const nearest = FIELDS.reduce((best, field) => Math.hypot((field.x - x) * 1.5, field.y - y) < Math.hypot((best.x - x) * 1.5, best.y - y) ? field : best, FIELDS[0]);
+  chooseField(nearest.id);
 });
+
+function enteredField(id, origin) {
+  if (id === 'forest' && game.forestEnemyAlive) { startCombat('scout', origin); return; }
+  if (id === HORDE_ROUTE[game.hordeIndex] && game.hordeIndex > 0) { startCombat('horde', origin); return; }
+  if (id === 'watchtower' && game.bossAlive && game.questItem) { startCombat('boss', origin); return; }
+  if (id === 'watchtower' && !game.questItem) toast('Am Wachturm brauchst du das Silberblatt.');
+  else toast(`${FIELD_BY_ID[id].name} erreicht. 1 Reisepunkt verbraucht.`);
+  render();
+}
 
 function renderSidebar() {
   $('#dayStat').textContent = String(game.day).padStart(2, '0');
@@ -147,8 +164,10 @@ function takeAction(action) {
 }
 
 $('#sleepBtn').addEventListener('click', () => {
+  if (world) { world.route = []; world.targetRing.visible = false; }
   const result = sleep(game);
   if (!result.ok) { toast(result.reason); return; }
+  if (game.field === 'castle' && world && world.hero.position.distanceTo(worldPoint(FIELD_BY_ID.castle)) > 12) world.teleport('castle');
   if (game.phase === 'loss') return showEnding(false);
   toast(result.morningDamage ? `Tag ${game.day}: Ein Gegner auf deiner Route traf dich beim Erwachen (${result.morningDamage} Schaden).` : `Tag ${game.day} beginnt. Die Horde ist weitergezogen.`);
   if (HORDE_ROUTE[game.hordeIndex] === game.field && game.hordeIndex > 0) startCombat('horde');
@@ -157,7 +176,7 @@ $('#sleepBtn').addEventListener('click', () => {
 
 $('#guideBtn').addEventListener('click', () => {
   $('#overlay').classList.remove('hidden');
-  $('#overlay').innerHTML = `<div class="modal guide"><button class="close" id="closeOverlay" aria-label="Schließen">×</button><div class="eyebrow">SO SPIELST DU</div><h2>Erkunden. Planen. Kämpfen.</h2><div class="guide-grid"><div><strong>01 · Reisen</strong><p>Klicke ein benachbartes Feld. Jeder Wechsel kostet einen von sieben Reisepunkten. Zurückreisen kostet ebenfalls einen. Im aktuellen Feld ist das Bewegen frei.</p></div><div><strong>02 · Rasten</strong><p>Nur gegnerfreie Felder erlauben Schlaf. Der Tag endet; ungenutzte Punkte verfallen. Die Horde zieht nachts entlang der roten Route zur Burg.</p></div><div><strong>03 · Kämpfen</strong><p>Im Kampf: WASD bewegen, Maus zielen, Linksklick schießen, Leertaste rollen. Der Schuss unmittelbar nach einer Rolle streut. Pfeile sind begrenzt.</p></div><div><strong>04 · Gewinnen</strong><p>Finde das Silberblatt am Flussufer und besiege den Wächter am Wachturm. Die Burg fällt nach drei Treffern, plus einem weiteren pro gekauftem Schild.</p></div></div><p class="modal-note">Dieser Web-Prototyp ist eine Einzelspieler-Vorschau. Steam-Lobbys, Einladungen, Handel und echte Mehrspieler-Kämpfe folgen im Unity-Spiel.</p><button class="primary-btn" id="closeGuide">Verstanden</button></div>`;
+  $('#overlay').innerHTML = `<div class="modal guide"><button class="close" id="closeOverlay" aria-label="Schließen">×</button><div class="eyebrow">SO SPIELST DU</div><h2>Erkunden. Planen. Kämpfen.</h2><div class="guide-grid"><div><strong>01 · Laufen</strong><p>Klicke auf den Boden der 3D-Welt. Dein Held läuft zum Ziel; die Kamera folgt. Ein Klick auf die Minimap plant ebenfalls eine Route. Erst beim Überqueren einer Feldgrenze kostet es einen von sieben Reisepunkten.</p></div><div><strong>02 · Rasten</strong><p>Nur gegnerfreie Felder erlauben Schlaf. Der Tag endet; ungenutzte Punkte verfallen. Die Horde zieht nachts entlang der roten Route zur Burg.</p></div><div><strong>03 · Kämpfen</strong><p>Im Kampf: WASD bewegen, Maus zielen, Linksklick schießen, Leertaste rollen. Der Schuss unmittelbar nach einer Rolle streut. Pfeile sind begrenzt.</p></div><div><strong>04 · Gewinnen</strong><p>Finde das Silberblatt am Flussufer und besiege den Wächter am Wachturm. Die Burg fällt nach drei Treffern, plus einem weiteren pro gekauftem Schild.</p></div></div><p class="modal-note">Dieser Web-Prototyp ist eine Einzelspieler-Vorschau. Steam-Lobbys, Einladungen, Handel und echte Mehrspieler-Kämpfe folgen im Unity-Spiel.</p><button class="primary-btn" id="closeGuide">Verstanden</button></div>`;
   $('#closeOverlay').onclick = closeOverlay; $('#closeGuide').onclick = closeOverlay;
 });
 function closeOverlay() { $('#overlay').classList.add('hidden'); $('#overlay').innerHTML = ''; }
@@ -168,7 +187,7 @@ function showEnding(won) {
   game.phase = won ? 'victory' : 'loss';
   $('#overlay').classList.remove('hidden');
   $('#overlay').innerHTML = `<div class="modal ending"><div class="eyebrow">${won ? 'KAPITEL GESCHAFFT' : 'KAPITEL VERLOREN'}</div><h2>${won ? 'Ein Weg durch die Dunkelheit.' : 'Die Burg ist gefallen.'}</h2><p>${won ? 'Der Wächter ist besiegt und das Silberblatt gerettet. Du hast den ersten Prototyp durchgespielt.' : esc(game.result || 'Die Horde hat die Verteidigung überwunden.')}</p><button id="restartBtn" class="primary-btn">Neues Kapitel starten</button></div>`;
-  $('#restartBtn').onclick = () => { game = initialState(); closeOverlay(); render(); };
+  $('#restartBtn').onclick = () => { game = initialState(); world?.reset(); closeOverlay(); render(); };
   render();
 }
 
@@ -184,6 +203,7 @@ function startCombat(kind, retreatField = FIELD_BY_ID[game.field].neighbors[0]) 
     if (outcome === 'retreat') {
       game.field = retreatField;
       game.marker = { x: FIELD_BY_ID[retreatField].x, y: FIELD_BY_ID[retreatField].y };
+      world?.teleport(retreatField);
       game.phase = 'explore';
       toast('Du ziehst dich zurück. Der verbrauchte Reisepunkt bleibt verloren.');
     } else if (outcome === 'win') {
@@ -199,6 +219,7 @@ function startCombat(kind, retreatField = FIELD_BY_ID[game.field].neighbors[0]) 
       if (!night.ok) { game.day += 1; game.tp = MAX_TP; }
       game.hp = MAX_HP;
       game.marker = { x: FIELD_BY_ID.castle.x, y: FIELD_BY_ID.castle.y };
+      world?.teleport('castle');
       game.claimed = {};
       if (game.phase === 'loss') return showEnding(false);
       toast('Du bist gefallen. Am nächsten Morgen erwachst du in der Burg; das Silberblatt liegt am Todesort.');
@@ -212,6 +233,214 @@ function startCombat(kind, retreatField = FIELD_BY_ID[game.field].neighbors[0]) 
     button.addEventListener('pointerdown', event => { event.preventDefault(); combat?.keys.add(button.dataset.key); });
     for (const name of ['pointerup', 'pointercancel', 'pointerleave']) button.addEventListener(name, () => combat?.keys.delete(button.dataset.key));
   });
+}
+
+class ExplorationWorld {
+  constructor(container) {
+    this.container = container;
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x9eb9a7);
+    this.scene.fog = new THREE.Fog(0x9eb9a7, 52, 145);
+    this.camera = new THREE.PerspectiveCamera(57, 1, .1, 220);
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.7));
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.45;
+    container.appendChild(this.renderer.domElement);
+    this.scene.add(new THREE.HemisphereLight(0xe6f0df, 0x53634e, 3));
+    const sunlight = new THREE.DirectionalLight(0xffe2ab, 3.5);
+    sunlight.position.set(-18, 35, -20); this.scene.add(sunlight);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(150, 120), new THREE.MeshStandardMaterial({ color: 0x617a54, roughness: 1 }));
+    ground.rotation.x = -Math.PI / 2; ground.position.y = -.08; this.scene.add(ground);
+    this.ground = ground;
+    this.makeWorld();
+    this.hero = this.makeHero();
+    this.hero.position.copy(worldPoint(FIELD_BY_ID.castle)).add(new THREE.Vector3(0,0,6));
+    this.scene.add(this.hero);
+    this.targetRing = new THREE.Mesh(new THREE.RingGeometry(.7, .86, 32), new THREE.MeshBasicMaterial({ color: 0xf7df95, transparent: true, opacity: .9, side: THREE.DoubleSide }));
+    this.targetRing.rotation.x = -Math.PI / 2; this.targetRing.position.y = .06; this.targetRing.visible = false; this.scene.add(this.targetRing);
+    this.route = [];
+    this.clock = new THREE.Clock();
+    this.raycaster = new THREE.Raycaster();
+    this.pointer = new THREE.Vector2();
+    this.onClick = event => {
+      if (game.phase !== 'explore' || !$('#overlay').classList.contains('hidden')) return;
+      const rect = this.renderer.domElement.getBoundingClientRect();
+      this.pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
+      this.raycaster.setFromCamera(this.pointer, this.camera);
+      const hit = this.raycaster.intersectObject(this.ground)[0];
+      if (hit) this.moveTo(hit.point);
+    };
+    this.onResize = () => {
+      const w = container.clientWidth, h = container.clientHeight;
+      this.camera.aspect = w / h; this.camera.updateProjectionMatrix(); this.renderer.setSize(w, h);
+    };
+    this.renderer.domElement.addEventListener('pointerdown', this.onClick);
+    window.addEventListener('resize', this.onResize);
+    this.onResize();
+    this.camera.position.copy(this.hero.position).add(new THREE.Vector3(0, 12.5, 17));
+    this.camera.lookAt(this.hero.position.x, 0, this.hero.position.z - 4);
+    this.frame();
+  }
+  add(mesh, x, y, z, parent = this.scene) { mesh.position.set(x, y, z); parent.add(mesh); return mesh; }
+  mat(color, roughness = 1) { return new THREE.MeshStandardMaterial({ color, roughness }); }
+  makeWorld() {
+    const soil = this.mat(0xb59b6a), pale = this.mat(0xcabf8e), stone = this.mat(0x8d9690), roof = this.mat(0x5e5968), wood = this.mat(0x6d4e35), foliage = [this.mat(0x28533d), this.mat(0x3f6b4b), this.mat(0x527852)];
+    const seed = n => { const v = Math.sin(n * 57.23 + 13.7) * 43758.5453; return v - Math.floor(v); };
+    // Each illustrated-map coordinate corresponds to the same coordinate in this playable world.
+    for (const field of FIELDS) {
+      const c = worldPoint(field);
+      const regionColor = { castle: 0x8ca279, meadow: 0x97ad69, crossroads: 0x8b9b66, forest: 0x4f7857, marsh: 0x687f69, quarry: 0x9b9b85, river: 0x6f9a7f, watchtower: 0x777d77 }[field.id];
+      const region = new THREE.Mesh(new THREE.CircleGeometry(field.id === 'watchtower' ? 8 : 10.4, 48), new THREE.MeshStandardMaterial({ color: regionColor, roughness: 1, transparent: true, opacity: .82 }));
+      region.rotation.x = -Math.PI / 2; region.position.set(c.x, -.025, c.z); this.scene.add(region);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(10.25, 10.43, 48), new THREE.MeshBasicMaterial({ color: 0xe8d6a4, transparent: true, opacity: .38, side: THREE.DoubleSide }));
+      ring.rotation.x = -Math.PI / 2; ring.position.set(c.x, .015, c.z); this.scene.add(ring);
+      const label = this.makeLabel(field.name.toUpperCase()); label.position.set(c.x, 2.55, c.z); this.scene.add(label);
+    }
+    for (const field of FIELDS) for (const neighborId of field.neighbors) if (field.id < neighborId) {
+      const a = worldPoint(field), b = worldPoint(FIELD_BY_ID[neighborId]);
+      const direction = b.clone().sub(a), length = direction.length();
+      const path = new THREE.Mesh(new THREE.BoxGeometry(3.7, .04, length), soil);
+      path.rotation.y = Math.atan2(direction.x, direction.z);
+      path.position.copy(a).addScaledVector(direction, .5); path.position.y = .018; this.scene.add(path);
+      const crossing = a.clone().addScaledVector(direction, .5);
+      const gate = new THREE.Mesh(new THREE.BoxGeometry(5.3, .12, .32), new THREE.MeshStandardMaterial({ color: 0xf0d994, emissive: 0x866329, emissiveIntensity: .25 }));
+      gate.rotation.y = Math.atan2(direction.x, direction.z);
+      gate.position.set(crossing.x, .08, crossing.z); this.scene.add(gate);
+      for (const offset of [-2.6, 2.6]) {
+        const perpendicular = new THREE.Vector3(direction.z, 0, -direction.x).normalize();
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(.15, .2, 1.3, 6), wood);
+        post.position.copy(crossing).addScaledVector(perpendicular, offset); post.position.y = .65; this.scene.add(post);
+      }
+    }
+    // Geographical landmarks echo the image-map: castle northwest, woods middle-east,
+    // quarry south, river southeast, marsh east, watchtower northeast.
+    const castle = worldPoint(FIELD_BY_ID.castle);
+    this.add(new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.7, 3, 8), stone), castle.x, 1.5, castle.z - 2);
+    for (const [dx, dz] of [[-3,-4],[3,-4],[-3,0],[3,0]]) {
+      this.add(new THREE.Mesh(new THREE.CylinderGeometry(.8, 1.05, 6, 8), stone), castle.x+dx, 3, castle.z+dz);
+      this.add(new THREE.Mesh(new THREE.ConeGeometry(1.23, 2.2, 8), roof), castle.x+dx, 7, castle.z+dz);
+    }
+    this.add(new THREE.Mesh(new THREE.ConeGeometry(3.5, 2.6, 8), roof), castle.x, 4.25, castle.z - 2);
+    const tower = worldPoint(FIELD_BY_ID.watchtower);
+    this.add(new THREE.Mesh(new THREE.CylinderGeometry(1.45, 1.75, 9, 8), stone), tower.x, 4.5, tower.z-2);
+    this.add(new THREE.Mesh(new THREE.ConeGeometry(2.15, 3.5, 8), this.mat(0x3f3a4d)), tower.x, 10.7, tower.z-2);
+    const evil = new THREE.PointLight(0xd7666a, 7, 13); evil.position.set(tower.x, 8, tower.z-2); this.scene.add(evil);
+    const forest = worldPoint(FIELD_BY_ID.forest), meadow = worldPoint(FIELD_BY_ID.meadow), marsh = worldPoint(FIELD_BY_ID.marsh), river = worldPoint(FIELD_BY_ID.river), quarry = worldPoint(FIELD_BY_ID.quarry);
+    const treeAt = (x,z,size=1,dark=false) => {
+      const trunk = this.add(new THREE.Mesh(new THREE.CylinderGeometry(.2*size,.33*size,2.1*size,6), wood), x, 1.05*size, z);
+      const leaves = this.add(new THREE.Mesh(new THREE.ConeGeometry(1.22*size,3.2*size,7), dark ? foliage[0] : foliage[Math.floor(seed(x*3+z)*3)]), x, 3.2*size, z);
+      leaves.rotation.y = seed(z*7+x)*Math.PI; return trunk;
+    };
+    for (let i=0;i<48;i++) {
+      const angle = seed(i+11)*Math.PI*2, radius = 3.4 + seed(i+143)*8.7;
+      treeAt(forest.x+Math.cos(angle)*radius, forest.z+Math.sin(angle)*radius, .65+seed(i+260)*.8, true);
+    }
+    for (let i=0;i<22;i++) {
+      const a=seed(i+501)*Math.PI*2, r=4+seed(i+703)*9;
+      treeAt(meadow.x+Math.cos(a)*r, meadow.z+Math.sin(a)*r, .5+seed(i+901)*.45);
+    }
+    for (let i=0;i<11;i++) {
+      const x=marsh.x+(seed(i+601)-.5)*17, z=marsh.z+(seed(i+809)-.5)*14;
+      const pool = new THREE.Mesh(new THREE.CircleGeometry(1.1+seed(i+43)*1.2,20), new THREE.MeshStandardMaterial({ color: 0x476e6d, metalness: .2, roughness: .25 }));
+      pool.rotation.x=-Math.PI/2; pool.position.set(x,.035,z); this.scene.add(pool);
+    }
+    for (let i=0;i<28;i++) {
+      const x=quarry.x+(seed(i+83)-.5)*19, z=quarry.z+(seed(i+128)-.5)*17;
+      const rock = this.add(new THREE.Mesh(new THREE.IcosahedronGeometry(.5+seed(i+218)*1.2,0), stone),x,.2,z);
+      rock.rotation.set(seed(i+5),seed(i+4),seed(i+3));
+    }
+    for (let i=0;i<12;i++) {
+      const water = new THREE.Mesh(new THREE.PlaneGeometry(1.9,2.9), new THREE.MeshStandardMaterial({ color: 0x5c9caa, metalness:.25, roughness:.35, transparent:true, opacity:.87 }));
+      water.rotation.x=-Math.PI/2; water.rotation.z=.15; water.position.set(river.x-5+i*.88,.045,river.z-2+i*.25); this.scene.add(water);
+    }
+    const leaf = this.add(new THREE.Mesh(new THREE.IcosahedronGeometry(.55,1), new THREE.MeshStandardMaterial({ color: 0xe6d675, emissive:0xcfa954, emissiveIntensity:1.3 })),river.x+1,1.2,river.z-1);
+    const questLight = new THREE.PointLight(0xffe580,3.5,8); questLight.position.copy(leaf.position); this.scene.add(questLight);
+    for (const fieldId of ['meadow','crossroads','quarry']) {
+      const c=worldPoint(FIELD_BY_ID[fieldId]);
+      const base=this.add(new THREE.Mesh(new THREE.BoxGeometry(2.8,2,2.4), this.mat(0xb2a484)),c.x+3,1,c.z+3);
+      const hutRoof=this.add(new THREE.Mesh(new THREE.ConeGeometry(2.2,2,4), roof),c.x+3,2.9,c.z+3); hutRoof.rotation.y=Math.PI/4;
+    }
+  }
+  makeLabel(value) {
+    const canvas=document.createElement('canvas'); canvas.width=512; canvas.height=96;
+    const ctx=canvas.getContext('2d'); ctx.fillStyle='#12241fcb'; ctx.roundRect(0,0,512,96,18); ctx.fill();
+    ctx.font='bold 31px sans-serif'; ctx.textAlign='center'; ctx.fillStyle='#f8ebc4'; ctx.fillText(value,256,60);
+    const texture=new THREE.CanvasTexture(canvas); texture.colorSpace=THREE.SRGBColorSpace;
+    const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,transparent:true,depthTest:false})); sprite.scale.set(8,1.5,1); return sprite;
+  }
+  makeHero() {
+    const group=new THREE.Group(); const cloak=this.mat(0x285c46), leather=this.mat(0x8d603b), skin=this.mat(0xe7c7a1);
+    const body=new THREE.Mesh(new THREE.ConeGeometry(.58,1.5,8),cloak); body.position.y=.86; group.add(body);
+    const head=new THREE.Mesh(new THREE.SphereGeometry(.33,12,8),skin); head.position.y=1.75; group.add(head);
+    const hood=new THREE.Mesh(new THREE.ConeGeometry(.42,.55,8),cloak); hood.position.y=2.03; group.add(hood);
+    const bow=new THREE.Mesh(new THREE.TorusGeometry(.5,.045,6,18,Math.PI),leather); bow.position.set(.55,1.05,-.05); bow.rotation.y=Math.PI/2; group.add(bow);
+    const quiver=new THREE.Mesh(new THREE.CylinderGeometry(.14,.18,.7,6),leather); quiver.position.set(-.32,1.15,.2); quiver.rotation.z=.45; group.add(quiver);
+    const marker=new THREE.Mesh(new THREE.RingGeometry(.75,.91,32),new THREE.MeshBasicMaterial({color:0xe8d286,side:THREE.DoubleSide,transparent:true,opacity:.8})); marker.rotation.x=-Math.PI/2; marker.position.y=.05; group.add(marker);
+    return group;
+  }
+  moveTo(target) {
+    if (game.phase !== 'explore') return;
+    const destination=fieldAt(target);
+    const path=shortestPath(game.field,destination.id);
+    if (!path) return toast('Dorthin gibt es noch keinen Weg.');
+    if (path.length-1>game.tp) return toast(`Für ${destination.name} brauchst du ${path.length-1} Reisepunkte. Du hast ${game.tp}.`);
+    this.route=[];
+    for (let i=1;i<path.length;i++) {
+      const from=worldPoint(FIELD_BY_ID[path[i-1]]), to=worldPoint(FIELD_BY_ID[path[i]]);
+      // The glowing gate halfway along each road is the real field boundary.
+      const crossing=from.clone().lerp(to,.51);
+      this.route.push({point:crossing,enter:path[i],from:path[i-1]});
+    }
+    const final=target.clone(); final.y=0;
+    const center=worldPoint(destination);
+    const offset=final.clone().sub(center);
+    if (offset.length()>9.7) final.copy(center).addScaledVector(offset.normalize(),9.7);
+    this.route.push({point:final});
+    this.targetRing.position.set(final.x,.06,final.z); this.targetRing.visible=true;
+    $('#destinationLabel').textContent=destination.name.toUpperCase();
+    toast(destination.id===game.field ? `Laufe innerhalb von ${destination.name}.` : `Route: ${path.map(id=>FIELD_BY_ID[id].name).join(' → ')}`);
+  }
+  teleport(id) {
+    this.route=[]; this.targetRing.visible=false;
+    this.hero.position.copy(worldPoint(FIELD_BY_ID[id]));
+    if (id === 'castle') this.hero.position.z += 6;
+    $('#destinationLabel').textContent=FIELD_BY_ID[id].name.toUpperCase();
+    this.updateMarker();
+  }
+  reset() { this.teleport('castle'); }
+  updateMarker() {
+    const marker=$('#playerMarker');
+    if (marker) marker.setAttribute('transform',`translate(${(this.hero.position.x/1.32+50)*10},${(this.hero.position.z/1.12+50)*6.67})`);
+  }
+  frame = () => {
+    this.raf=requestAnimationFrame(this.frame);
+    const dt=Math.min(.05,this.clock.getDelta());
+    if (game.phase==='explore' && this.route.length && $('#overlay').classList.contains('hidden')) {
+      const step=this.route[0], delta=step.point.clone().sub(this.hero.position); delta.y=0;
+      const distance=delta.length();
+      if (distance<.15) {
+        this.hero.position.copy(step.point); this.route.shift();
+        if (step.enter) {
+          const result=travel(game,step.enter);
+          if (!result.ok) {this.route=[]; this.targetRing.visible=false; toast(result.reason);}
+          else {enteredField(step.enter,step.from); if (game.phase!=='explore') this.route=[];}
+        }
+        if (!this.route.length) this.targetRing.visible=false;
+      } else {
+        const stride=Math.min(distance,dt*8.2); this.hero.position.addScaledVector(delta.normalize(),stride);
+        this.hero.rotation.y=Math.atan2(delta.x,delta.z);
+        this.hero.children[0].rotation.z=Math.sin(performance.now()*.012)*.055;
+      }
+      this.updateMarker();
+    }
+    const desired=this.hero.position.clone().add(new THREE.Vector3(0,12.5,17));
+    this.camera.position.lerp(desired,Math.min(1,dt*4));
+    this.camera.lookAt(this.hero.position.x,0,this.hero.position.z-4);
+    this.renderer.render(this.scene,this.camera);
+  };
+  dispose() { cancelAnimationFrame(this.raf); this.renderer.domElement.removeEventListener('pointerdown',this.onClick); window.removeEventListener('resize',this.onResize); this.renderer.dispose(); this.container.replaceChildren(); }
 }
 
 class CombatScene {
@@ -330,4 +559,5 @@ class CombatScene {
   dispose() { this.ended = true; cancelAnimationFrame(this.raf); window.removeEventListener('keydown',this.onKeyDown); window.removeEventListener('keyup',this.onKeyUp); window.removeEventListener('resize',this.onResize); this.renderer.domElement.removeEventListener('pointermove',this.onMove); this.renderer.domElement.removeEventListener('pointerdown',this.onShoot); this.renderer.dispose(); this.container.replaceChildren(); }
 }
 
+world = new ExplorationWorld($('#worldViewport'));
 render();
