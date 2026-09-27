@@ -9,30 +9,26 @@ let world = null;
 const fieldIcons = { castle: '♜', meadow: '✦', crossroads: '✣', forest: '♠', marsh: '◈', quarry: '◆', river: '≈', watchtower: '♜' };
 
 app.innerHTML = `
-  <header class="topbar">
-    <div class="brand"><div class="brand-mark">✦</div><div><strong>THE SEVEN PATHS</strong><small>SPIELBARER KONZEPTSTAND · KAPITEL I</small></div></div>
-    <div class="top-actions"><span class="pill subtle">Einzelspieler-Vorschau</span><button id="guideBtn" class="text-button">Spielanleitung ↗</button></div>
-  </header>
-  <main>
-    <section class="intro"><div class="eyebrow">KÖNIGREICH ELDERVALE · BEGEHBARE VORSCHAU</div><h1>Sieben Wege.<br><em>Eine Welt.</em></h1><p>Klicke in die 3D-Welt: Dein Bogenschütze läuft selbst zum Ziel. Die kleine Karte zeigt deinen Standort und die Feldgrenzen. Beim Übergang in ein anderes Feld verbrauchst du einen Reisepunkt.</p></section>
-    <section class="game-shell">
-      <div class="world-card">
-        <div id="worldViewport" aria-label="Begehbare 3D-Welt; klicke auf den Boden, um den Bogenschützen zu bewegen"></div>
-        <div class="world-topline"><span><span class="live-dot"></span> BEGEHBARE WELT</span><span id="phaseLabel">ERKUNDUNG</span></div>
-        <div class="world-prompt">↖ KLICKE AUF EINEN ORT IN DER WELT · DEIN HELD GEHT DORTHIN</div>
-        <div class="destination-label" id="destinationLabel">KÖNIGSBURG</div>
-        <div class="minimap" aria-label="Minimap der Welt"><div class="minimap-title">WELTKARTE <span id="miniLocation">Königsburg</span></div><div class="mini-frame"><img src="./assets/seven-paths-map.png" alt="Kleine Übersicht der Welt"/><svg id="mapSvg" viewBox="0 0 1000 667" preserveAspectRatio="none" aria-label="Feldübersicht"></svg></div><div class="mini-legend"><span>● Du</span><span>● Gegner</span><span>● Quest</span></div></div>
-      </div>
-      <aside class="sidebar">
-        <div class="hero-card"><div class="hero-portrait">🏹</div><div><div class="eyebrow">DEIN HELD</div><h2>Der Bogenschütze</h2><p>Schnell. Wendiger Fernkampf. Eine Rolle rettet dich, macht den nächsten Schuss aber unpräzise.</p></div></div>
-        <div class="stat-grid"><div class="stat"><small>TAG</small><strong id="dayStat">01</strong></div><div class="stat"><small>REISEPUNKTE</small><strong id="tpStat">7 <span>/ 7</span></strong></div><div class="stat"><small>LEBEN</small><strong id="hpStat">100</strong></div><div class="stat"><small>PFEILE</small><strong id="arrowStat">12</strong></div></div>
-        <div class="card section-card"><div class="card-heading"><span>AKTUELLER ORT</span><span id="locationIcon">♜</span></div><h3 id="locationName">Königsburg</h3><p id="locationText"></p><div id="locationActions" class="action-list"></div></div>
-        <div class="card section-card quest-card"><div class="card-heading"><span>HAUPTQUEST</span><span class="tiny-badge">AKTIV</span></div><h3>Das Silberblatt</h3><p id="questText">Ein seltenes Blatt wächst am Flussufer. Bringe es zur Burg und stelle dich der Macht am Wachturm.</p><div id="questProgress" class="quest-progress"></div></div>
-        <div class="card section-card threat-card"><div class="card-heading"><span>BURG & BEDROHUNG</span><span id="threatLabel">Horde am Wachturm</span></div><div class="meter"><div id="castleMeter"></div></div><div class="threat-row"><span id="castleText"></span><span id="goldText"></span></div><p class="small" id="routeText"></p></div>
+  <main class="game-shell">
+    <div class="world-card">
+      <div id="worldViewport" aria-label="Begehbare 3D-Welt; klicke auf den Boden, um den Bogenschützen zu bewegen"></div>
+      <div class="hud-brand"><span class="brand-mark">✦</span><div><strong>THE SEVEN PATHS</strong><small>KAPITEL I · SPIELBARE VORSCHAU</small></div></div>
+      <div class="world-topline"><span><span class="live-dot"></span> <span id="phaseLabel">ERKUNDUNG</span></span><button id="fullscreenBtn" class="text-button" aria-label="Vollbild umschalten">⛶ &nbsp; Vollbild</button><button id="guideBtn" class="text-button">? &nbsp; Hilfe</button></div>
+      <aside class="hud-left" aria-label="Held und Status">
+        <div class="hero-card"><div class="hero-portrait">🏹</div><div><div class="eyebrow">DEIN HELD</div><h2>Der Bogenschütze</h2><p>Agil · Distanz · Rolle</p></div></div>
+        <div class="stat-grid"><div class="stat"><small>TAG</small><strong id="dayStat">01</strong></div><div class="stat"><small>REISE</small><strong id="tpStat">7 <span>/ 7</span></strong></div><div class="stat"><small>LEBEN</small><strong id="hpStat">100</strong></div><div class="stat"><small>PFEILE</small><strong id="arrowStat">12</strong></div></div>
+        <button id="mobileActionsBtn" class="mobile-actions-btn" aria-expanded="false">⌄ &nbsp; Ort & Aktionen</button>
+        <div class="card location-card"><div class="card-heading"><span>AKTUELLER ORT</span><span id="locationIcon">♜</span></div><h3 id="locationName">Königsburg</h3><p id="locationText"></p><div id="locationActions" class="action-list"></div></div>
         <button id="sleepBtn" class="primary-btn">✦ &nbsp; Tag beenden</button><p class="small footnote" id="sleepHint">Schlafen ist nur in gegnerfreien Feldern möglich.</p>
       </aside>
-    </section>
-    <section class="below"><div><div class="eyebrow">DEIN ZIEL</div><h2>Die Welt bewegt sich, auch wenn du ruhst.</h2></div><p>Jede Nacht rückt die Horde ein Feld Richtung Burg vor. Sieben Reisepunkte pro Tag, keine angesparten Punkte. Ein Schild aus dem Burgshop fängt einen zusätzlichen Angriff ab. Dieser Web-Prototyp zeigt das Bewegungsgefühl; der spätere Steam-Koop entsteht in Unity.</p></section>
+      <aside class="hud-right" aria-label="Karte und Aufgaben">
+        <div class="minimap" aria-label="Minimap der Welt"><div class="minimap-title">WELTKARTE <span id="miniLocation">Königsburg</span></div><div class="mini-frame"><img src="./assets/seven-paths-map.png" alt="Kleine Übersicht der Welt"/><svg id="mapSvg" viewBox="0 0 1000 667" preserveAspectRatio="none" aria-label="Feldübersicht"></svg></div><div class="mini-legend"><span>● Du</span><span>● Gegner</span><span>● Quest</span></div></div>
+        <details class="hud-drawer quest-card"><summary><span class="drawer-icon">✦</span><span><small>HAUPTQUEST</small><strong>Das Silberblatt</strong></span><span class="drawer-chevron">⌄</span></summary><div class="drawer-content"><p id="questText"></p><div id="questProgress" class="quest-progress"></div></div></details>
+        <details class="hud-drawer threat-card"><summary><span class="drawer-icon danger">♜</span><span><small>BURG & HORDE</small><strong id="threatLabel">Horde am Wachturm</strong></span><span class="drawer-chevron">⌄</span></summary><div class="drawer-content"><div class="meter"><div id="castleMeter"></div></div><div class="threat-row"><span id="castleText"></span><span id="goldText"></span></div><p class="small" id="routeText"></p></div></details>
+      </aside>
+      <div class="destination-label" id="destinationLabel">KÖNIGSBURG</div>
+      <div class="world-prompt" id="worldPrompt">KLICKE AUF DEN BODEN, UM ZU LAUFEN · WÄHLE EIN ZIEL AUF DER KARTE</div>
+    </div>
   </main>
   <div id="toast" role="status" aria-live="polite"></div>
   <div id="overlay" class="overlay hidden" role="dialog" aria-modal="true"></div>
@@ -55,6 +51,12 @@ function shortestPath(start, goal) {
   return null;
 }
 function toast(message) { const el = $('#toast'); el.textContent = message; el.classList.add('show'); clearTimeout(toast.timer); toast.timer = setTimeout(() => el.classList.remove('show'), 3700); }
+
+$('#mobileActionsBtn').addEventListener('click', () => {
+  const open = $('.hud-left').classList.toggle('actions-open');
+  $('#mobileActionsBtn').setAttribute('aria-expanded', String(open));
+  $('#mobileActionsBtn').innerHTML = open ? '⌃ &nbsp; Ort & Aktionen schließen' : '⌄ &nbsp; Ort & Aktionen';
+});
 
 function renderMap() {
   const edges = [];
@@ -178,6 +180,15 @@ $('#guideBtn').addEventListener('click', () => {
   $('#overlay').classList.remove('hidden');
   $('#overlay').innerHTML = `<div class="modal guide"><button class="close" id="closeOverlay" aria-label="Schließen">×</button><div class="eyebrow">SO SPIELST DU</div><h2>Erkunden. Planen. Kämpfen.</h2><div class="guide-grid"><div><strong>01 · Laufen</strong><p>Klicke auf den Boden der 3D-Welt. Dein Held läuft zum Ziel; die Kamera folgt. Ein Klick auf die Minimap plant ebenfalls eine Route. Erst beim Überqueren einer Feldgrenze kostet es einen von sieben Reisepunkten.</p></div><div><strong>02 · Rasten</strong><p>Nur gegnerfreie Felder erlauben Schlaf. Der Tag endet; ungenutzte Punkte verfallen. Die Horde zieht nachts entlang der roten Route zur Burg.</p></div><div><strong>03 · Kämpfen</strong><p>Im Kampf: WASD bewegen, Maus zielen, Linksklick schießen, Leertaste rollen. Der Schuss unmittelbar nach einer Rolle streut. Pfeile sind begrenzt.</p></div><div><strong>04 · Gewinnen</strong><p>Finde das Silberblatt am Flussufer und besiege den Wächter am Wachturm. Die Burg fällt nach drei Treffern, plus einem weiteren pro gekauftem Schild.</p></div></div><p class="modal-note">Dieser Web-Prototyp ist eine Einzelspieler-Vorschau. Steam-Lobbys, Einladungen, Handel und echte Mehrspieler-Kämpfe folgen im Unity-Spiel.</p><button class="primary-btn" id="closeGuide">Verstanden</button></div>`;
   $('#closeOverlay').onclick = closeOverlay; $('#closeGuide').onclick = closeOverlay;
+});
+$('#fullscreenBtn').addEventListener('click', async () => {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await document.documentElement.requestFullscreen();
+  } catch { toast('Vollbild wird von diesem Browser nicht unterstützt.'); }
+});
+document.addEventListener('fullscreenchange', () => {
+  $('#fullscreenBtn').innerHTML = document.fullscreenElement ? '⛶ &nbsp; Vollbild verlassen' : '⛶ &nbsp; Vollbild';
 });
 function closeOverlay() { $('#overlay').classList.add('hidden'); $('#overlay').innerHTML = ''; }
 function render() { renderMap(); renderSidebar(); }
@@ -383,6 +394,7 @@ class ExplorationWorld {
   moveTo(target) {
     if (game.phase !== 'explore') return;
     const destination=fieldAt(target);
+    $('#worldPrompt').classList.add('dismissed');
     const path=shortestPath(game.field,destination.id);
     if (!path) return toast('Dorthin gibt es noch keinen Weg.');
     if (path.length-1>game.tp) return toast(`Für ${destination.name} brauchst du ${path.length-1} Reisepunkte. Du hast ${game.tp}.`);
